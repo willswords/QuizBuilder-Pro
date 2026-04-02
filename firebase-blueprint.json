@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "media": {
+      "title": "Media Item",
+      "description": "A media file (image or video) uploaded by a user.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The original filename." },
+        "type": { "type": "string", "description": "The MIME type of the file." },
+        "size": { "type": "integer", "description": "The size of the file in bytes." },
+        "url": { "type": "string", "description": "The URL or base64 data of the file." },
+        "userId": { "type": "string", "description": "The ID of the user who uploaded the file." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the file was uploaded." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the file metadata was last updated." }
+      },
+      "required": ["name", "type", "size", "url", "userId", "createdAt", "updatedAt"]
+    },
+    "users": {
+      "title": "User Profile",
+      "description": "Information about a registered user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID from Firebase Auth." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "The user's role." }
+      },
+      "required": ["uid", "displayName", "email", "role"]
+    },
+    "quizzes": {
+      "title": "Quiz",
+      "description": "A quiz created by a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the quiz." },
+        "description": { "type": "string", "description": "The description of the quiz." },
+        "questions": { 
+          "type": "array", 
+          "items": { "$ref": "question" },
+          "description": "The list of questions in the quiz." 
+        },
+        "passingScore": { "type": "integer", "description": "The passing score percentage." },
+        "userId": { "type": "string", "description": "The ID of the user who created the quiz." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the quiz was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the quiz was last updated." }
+      },
+      "required": ["title", "description", "questions", "passingScore", "userId", "createdAt", "updatedAt"]
+    },
+    "question": {
+      "title": "Question",
+      "description": "A single question or information block in a quiz.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ID of the question." },
+        "type": { "type": "string", "enum": ["true-false", "single-choice", "multiple-choice", "info"], "description": "The type of question." },
+        "text": { "type": "string", "description": "The question text or info title." },
+        "content": { "type": "string", "description": "The content for info blocks." },
+        "options": { "type": "array", "description": "The list of options for the question." },
+        "explanation": { "type": "string", "description": "The explanation for the correct answer." },
+        "isScenario": { "type": "boolean", "description": "Whether this info block is a scenario." },
+        "showScenario": { "type": "boolean", "description": "Whether to show the last scenario for this question." }
+      },
+      "required": ["id", "type", "text"]
+    }
+  },
+  "firestore": {
+    "/media/{mediaId}": {
+      "schema": "media",
+      "description": "Collection of media items."
+    },
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "Collection of user profiles."
+    },
+    "/quizzes/{quizId}": {
+      "schema": "quizzes",
+      "description": "Collection of quizzes."
+    }
+  }
+}

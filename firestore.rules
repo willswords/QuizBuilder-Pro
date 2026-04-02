@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (from Firebase Auth)
+    // Fields:
+    //   - displayName: string (required, 1-100 chars)
+    //   - email: string (required, valid email format)
+    //   - role: string (required, ['admin', 'user'])
+    //
+    // Collection: media
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required, 1-255 chars)
+    //   - type: string (required, e.g., 'image/png', 'video/mp4')
+    //   - size: number (required, positive)
+    //   - url: string (required, valid URL or base64)
+    //   - userId: string (required, matches creator's UID)
+    //   - createdAt: string (required, ISO 8601 format)
+    //   - updatedAt: string (required, ISO 8601 format)
+    //
+    // Collection: quizzes
+    // Document ID: auto-generated
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required, 1-255 chars)
+    //   - description: string (required)
+    //   - questions: array (required, list of Question objects)
+    //     - Question object:
+    //       - id: string (required)
+    //       - type: string (required, ['true-false', 'single-choice', 'multiple-choice', 'info'])
+    //       - text: string (required)
+    //       - content: string (optional)
+    //       - options: array (optional)
+    //       - explanation: string (optional)
+    //       - isScenario: boolean (optional)
+    //       - showScenario: boolean (optional)
+    //   - passingScore: number (required, 0-100)
+    //   - userId: string (required, matches creator's UID)
+    //   - createdAt: string (required, ISO 8601 format)
+    //   - updatedAt: string (required, ISO 8601 format)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (request.auth.token.email == "wfindlay@gmail.com" && request.auth.token.email_verified == true) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'displayName', 'email', 'role']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'user'];
+    }
+
+    function isValidMedia(data) {
+      return hasOnlyAllowedFields(['name', 'type', 'size', 'url', 'userId', 'createdAt', 'updatedAt']) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 255 &&
+             data.type is string && data.type.size() >= 1 &&
+             data.size is number && data.size > 0 &&
+             data.url is string && data.url.size() >= 1 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt);
+    }
+
+    function isValidQuiz(data) {
+      return data.id is string && data.id.size() >= 1 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 255 &&
+             data.description is string &&
+             data.questions is list &&
+             data.passingScore is number && data.passingScore >= 0 && data.passingScore <= 100 &&
+             data.userId is string && (data.userId == request.auth.uid || isAdmin()) &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can read their own profile. Admins can read all.
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own profile as 'user' role. Admins can create any.
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role == 'user') || isAdmin());
+      
+      // Users can update their own profile but NOT their role. Admins can update any.
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      
+      // Only admins can delete users.
+      allow delete: if isAdmin();
+    }
+
+    match /media/{mediaId} {
+      // Anyone can read a specific media item if they have the ID.
+      allow get: if true;
+      // Only owners can list their own media.
+      allow list: if isDocOwner() || isAdmin();
+      
+      // Authenticated users can create media.
+      allow create: if isAuthenticated() && isValidMedia(request.resource.data);
+      
+      // Users can update their own media metadata.
+      allow update: if isDocOwner() && isValidMedia(request.resource.data) && 
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      
+      // Users can delete their own media.
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /quizzes/{quizId} {
+      // Anyone can read a specific quiz if they have the ID.
+      allow get: if true;
+      // Only owners can list their own quizzes.
+      allow list: if isDocOwner() || isAdmin();
+      
+      // Authenticated users can create quizzes.
+      allow create: if isAuthenticated() && isValidQuiz(request.resource.data) && 
+                    (request.resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can update their own quizzes.
+      allow update: if (isDocOwner() || isAdmin()) && isValidQuiz(request.resource.data) && 
+                    (request.resource.data.userId == resource.data.userId || isAdmin()) &&
+                    (request.resource.data.createdAt == resource.data.createdAt || isAdmin());
+      
+      // Users can delete their own quizzes.
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
